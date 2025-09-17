@@ -1,6 +1,30 @@
-modules = ["nodejs-18", "bash"]
+modules = ["nodejs-18", "bash", "nodejs-20"]
 [agent]
 expertMode = true
 
 [nix]
 channel = "stable-25_05"
+
+[[ports]]
+localPort = 5173
+externalPort = 80
+
+[workflows]
+
+[[workflows.workflow]]
+name = "run bolt dev"
+mode = "sequential"
+author = 3159273
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "pnpm run dev"
+
+[[workflows.workflow]]
+name = "run"
+mode = "sequential"
+author = 3159273
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "run bolt dev"
