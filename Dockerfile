@@ -1,15 +1,13 @@
-# ---- build stage ----
-FROM node:22-bookworm-slim AS build
+# ---------- base (pnpm-enabled) ----------
+FROM node:22-bookworm-slim AS base
 WORKDIR /app
-
-# CI-friendly env
-ENV HUSKY=0
-ENV CI=true
-
-# Use pnpm
+ENV HUSKY=0 CI=true
+# Enable pnpm via corepack
 RUN corepack enable && corepack prepare pnpm@9.15.9 --activate
 
-# Accept (optional) build-time public URL for Remix/Vite (Coolify can pass it)
+# ---------- build ----------
+FROM base AS build
+# Accept optional public URL for Vite/Remix
 ARG VITE_PUBLIC_APP_URL
 ENV VITE_PUBLIC_APP_URL=${VITE_PUBLIC_APP_URL}
 
@@ -19,74 +17,37 @@ RUN pnpm fetch
 
 # Copy source and build
 COPY . .
-# install with dev deps (needed to build)
+# Install with dev deps to build
 RUN pnpm install --offline --frozen-lockfile
-
-# Build the Remix app (SSR + client)
+# Build (SSR + client)
 RUN NODE_OPTIONS=--max-old-space-size=4096 pnpm run build
-
-# Keep only production deps for runtime
+# Prune to production deps only
 RUN pnpm prune --prod --ignore-scripts
 
-
-# ---- runtime stage ----
+# ---------- runtime ----------
 FROM node:22-bookworm-slim AS runtime
 WORKDIR /app
 
 ENV NODE_ENV=production
-ENV PORT=3000
+# Railway provides PORT at runtime; do NOT hardcode it.
 ENV HOST=0.0.0.0
 
-# Install curl so Coolify’s healthcheck works inside the image
+# (Optional) curl for healthchecks/logs
 RUN apt-get update && apt-get install -y --no-install-recommends curl \
   && rm -rf /var/lib/apt/lists/*
 
-# Copy only what we need to run
+# Copy only what the server needs
 COPY --from=build /app/build /app/build
+COPY --from=build /app/public /app/public
 COPY --from=build /app/node_modules /app/node_modules
 COPY --from=build /app/package.json /app/package.json
 
+# EXPOSE is metadata; keep 3000 as a sensible default
 EXPOSE 3000
 
-# Healthcheck for Coolify
+# Healthcheck uses the actual runtime port (defaults to 3000 if PORT is unset)
 HEALTHCHECK --interval=10s --timeout=3s --start-period=5s --retries=5 \
-  CMD curl -fsS http://localhost:3000/ || exit 1
+  CMD /bin/sh -lc 'curl -fsS "http://127.0.0.1:${PORT:-3000}/" || exit 1'
 
-# Start the Remix server
+# Start the Remix server (must listen on process.env.PORT and 0.0.0.0)
 CMD ["node", "build/server/index.js"]
-
-
-# ---- development stage ----
-FROM build AS development
-
-# Define environment variables for development
-ARG GROQ_API_KEY
-ARG HuggingFace_API_KEY
-ARG OPENAI_API_KEY
-ARG ANTHROPIC_API_KEY
-ARG OPEN_ROUTER_API_KEY
-ARG GOOGLE_GENERATIVE_AI_API_KEY
-ARG OLLAMA_API_BASE_URL
-ARG XAI_API_KEY
-ARG TOGETHER_API_KEY
-ARG TOGETHER_API_BASE_URL
-ARG VITE_LOG_LEVEL=debug
-ARG DEFAULT_NUM_CTX
-
-ENV GROQ_API_KEY=${GROQ_API_KEY} \
-    HuggingFace_API_KEY=${HuggingFace_API_KEY} \
-    OPENAI_API_KEY=${OPENAI_API_KEY} \
-    ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY} \
-    OPEN_ROUTER_API_KEY=${OPEN_ROUTER_API_KEY} \
-    GOOGLE_GENERATIVE_AI_API_KEY=${GOOGLE_GENERATIVE_AI_API_KEY} \
-    OLLAMA_API_BASE_URL=${OLLAMA_API_BASE_URL} \
-    XAI_API_KEY=${XAI_API_KEY} \
-    TOGETHER_API_KEY=${TOGETHER_API_KEY} \
-    TOGETHER_API_BASE_URL=${TOGETHER_API_BASE_URL} \
-    AWS_BEDROCK_CONFIG=${AWS_BEDROCK_CONFIG} \
-    VITE_LOG_LEVEL=${VITE_LOG_LEVEL} \
-    DEFAULT_NUM_CTX=${DEFAULT_NUM_CTX} \
-    RUNNING_IN_DOCKER=true
-
-RUN mkdir -p /app/run
-CMD ["pnpm", "run", "dev", "--host"]
