@@ -89,10 +89,7 @@ ENV GROQ_API_KEY=${GROQ_API_KEY} \
     RUNNING_IN_DOCKER=true
 
 RUN mkdir -p /app/run
-# CMD ["pnpm", "run", "dev", "--host"]
-
-# after copying build artifacts etc.
-CMD sh -lc 'bindings=$(./bindings.sh) && wrangler pages dev ./build/client $bindings --ip 0.0.0.0 --port ${PORT:-5173} --no-show-interactive-dev-session'
+CMD ["pnpm", "run", "dev", "--host"]
 
 
 

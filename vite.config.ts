@@ -19,6 +19,21 @@ export default defineConfig((config) => {
     build: {
       target: 'esnext',
     },
+    server: {
+      host: true,
+      allowedHosts: ['.replit.dev'],
+      watch: {
+        usePolling: true,      // avoid inotify
+        interval: 300,
+        ignored: [
+          '**/node_modules/**',
+          '**/.pnpm/**',
+          '**/.local/share/pnpm/**',       // your pnpm store in the home dir
+          '/home/runner/**/.local/share/pnpm/**', // absolute just in case
+          '**/.cache/**'
+        ],
+      },
+    },
     plugins: [
       nodePolyfills({
         include: ['buffer', 'process', 'util', 'stream'],
