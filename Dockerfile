@@ -1,26 +1,32 @@
-# ---- Build stage ----
-FROM node:20-alpine AS build
+# ---------- Build stage ----------
+FROM node:20-bookworm-slim AS build
 WORKDIR /app
+
+# pnpm
 RUN corepack enable && corepack prepare pnpm@9 --activate
+
+# deps first for caching
 COPY package.json pnpm-lock.yaml* ./
 RUN pnpm install --frozen-lockfile
+
+# copy source and build
 COPY . .
 RUN pnpm build
 
-# ---- Runtime stage ----
-FROM node:20-alpine
+# ---------- Runtime stage ----------
+FROM node:20-bookworm-slim
 WORKDIR /app
 
-# 1) Install wrangler (so the CMD can call it)
+# wrangler is needed at runtime for `pages dev`
 RUN npm i -g wrangler@4
 
-# 2) Copy the built app and scripts
+# copy built app + scripts
 COPY --from=build /app /app
 RUN chmod +x ./bindings.sh || true
 
-# 3) Ports: Railway injects $PORT; default to 5173 for local runs
+# Railway will inject PORT; default helps local `docker run`
 ENV PORT=5173
 EXPOSE 5173
 
-# 4) Start the Pages dev server (the one bolt expects in Docker)
+# IMPORTANT: bind to ${PORT}, not 5173
 CMD sh -lc 'bindings=$(./bindings.sh) && wrangler pages dev ./build/client $bindings --ip 0.0.0.0 --port ${PORT} --no-show-interactive-dev-session'
